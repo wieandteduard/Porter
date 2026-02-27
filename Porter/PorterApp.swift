@@ -13,13 +13,13 @@ struct PorterApp: App {
             PortListView()
         } label: {
             HStack(spacing: 3) {
-                Text("\(store.entries.count)")
-                    .monospacedDigit()
                 Image(systemName: store.entries.isEmpty
                       ? "square.fill"
                       : "circle.fill")
                     .font(.system(size: 7))
                     .foregroundStyle(store.entries.isEmpty ? .gray : .green)
+                Text(String(format: "%2d", store.entries.count))
+                    .fontDesign(.monospaced)
             }
             .onAppear { store.ensurePolling() }
         }
@@ -78,8 +78,11 @@ final class PortStore: ObservableObject {
 
     func killProcess(pid: Int32) {
         kill(pid, SIGTERM)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.refresh()
+    }
+
+    func removeEntry(id: UInt16) {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            entries.removeAll { $0.id == id }
         }
     }
 
@@ -242,6 +245,20 @@ final class PortStore: ObservableObject {
 // Views
 // ──────────────────────────────────────────────
 
+struct VisualEffectBackground: NSViewRepresentable {
+    let material: NSVisualEffectView.Material
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
+
 struct PortListView: View {
     @ObservedObject private var store = PortStore.shared
 
@@ -253,12 +270,13 @@ struct PortListView: View {
             if store.entries.isEmpty {
                 emptyState
             } else {
-                ForEach(store.entries) { entry in
-                    PortRow(entry: entry, store: store)
+                ForEach(Array(store.entries.enumerated()), id: \.element.id) { index, entry in
+                    PortRow(entry: entry, store: store, showTopDivider: index > 0)
                 }
+                .padding(.bottom, 6)
             }
         }
-        .frame(width: 300)
+        .frame(width: 340)
         .onAppear { store.ensurePolling() }
     }
 
@@ -266,14 +284,6 @@ struct PortListView: View {
         HStack(spacing: 10) {
             Text("Porter").font(.headline)
             Spacer()
-
-            if store.entries.count > 1 {
-                Button("Kill All") { store.killAll() }
-                    .font(.caption)
-                    .controlSize(.small)
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.red.opacity(0.8))
-            }
 
             Button(action: store.refresh) {
                 Image(systemName: "arrow.clockwise")
@@ -293,7 +303,7 @@ struct PortListView: View {
 
     private var emptyState: some View {
         VStack(spacing: 8) {
-            Image(systemName: "network.slash")
+            Image(systemName: "square.fill")
                 .font(.system(size: 24))
                 .foregroundStyle(.quaternary)
             Text("No projects running")
@@ -311,68 +321,137 @@ struct PortListView: View {
 struct PortRow: View {
     let entry: ActivePort
     let store: PortStore
+    let showTopDivider: Bool
+    @State private var isHovered = false
+    @State private var slidOut = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(entry.projectName)
-                    .font(.system(.body, weight: .medium))
-                    .lineLimit(1)
-
-                Spacer()
-
-                if let start = entry.startTime {
-                    Text(formatUptime(from: start))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            if showTopDivider {
+                Color(nsColor: .separatorColor)
+                    .frame(height: 1)
+                    .padding(.horizontal, 16)
             }
 
-            HStack(spacing: 0) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Circle()
                         .fill(.green)
                         .frame(width: 6, height: 6)
+                        .offset(y: -1)
 
+                    Text(entry.projectName)
+                        .font(.system(.body, weight: .medium))
+                        .lineLimit(1)
+
+                    Spacer()
+
+                HStack(spacing: 2) {
+                    HoverButton("Kill", role: .destructive) { killWithAnimation() }
+                    HoverButton("Open") { NSWorkspace.shared.open(entry.url) }
+                }
+                    .opacity(isHovered ? 1 : 0)
+                    .scaleEffect(isHovered ? 1 : 0.85, anchor: .trailing)
+                    .offset(x: isHovered ? 0 : 6)
+                }
+
+                HStack(spacing: 6) {
                     if !entry.branch.isEmpty {
                         HStack(spacing: 3) {
                             Image(systemName: "arrow.triangle.branch")
                             Text(entry.branch)
                                 .lineLimit(1)
+                                .truncationMode(.middle)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-
-                        Text("·")
                     }
 
-                    Text("localhost:\(entry.id)")
+                    Text(":\(String(entry.id))")
                         .fontDesign(.monospaced)
+                        .foregroundStyle(.tertiary)
+
+                    Spacer()
+
+                    if let start = entry.startTime {
+                        Text(formatUptime(from: start))
+                            .foregroundStyle(.tertiary)
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
-                Spacer()
-
-                HStack(spacing: 4) {
-                    Button("Open") { NSWorkspace.shared.open(entry.url) }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-
-                    Button("Kill") { store.killProcess(pid: entry.pid) }
-                        .buttonStyle(.borderless)
-                        .controlSize(.small)
-                        .foregroundStyle(.secondary)
-                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+        .blur(radius: slidOut ? 8 : 0)
+        .opacity(slidOut ? 0 : 1)
+        .offset(x: slidOut ? 340 : 0)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovered = hovering
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .contentShape(Rectangle())
         .contextMenu {
             Button("Copy URL") { PortStore.copyURL(entry.url) }
             Button("Open in Browser") { NSWorkspace.shared.open(entry.url) }
             Divider()
-            Button("Kill Server", role: .destructive) { store.killProcess(pid: entry.pid) }
+            Button("Kill Server", role: .destructive) { killWithAnimation() }
         }
+    }
+
+    private func killWithAnimation() {
+        store.killProcess(pid: entry.pid)
+        withAnimation(.easeOut(duration: 0.3)) {
+            slidOut = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            store.removeEntry(id: entry.id)
+        }
+    }
+}
+
+
+struct HoverButton: View {
+    let label: String
+    let role: ButtonRole?
+    let action: () -> Void
+    @State private var isHovered = false
+
+    init(_ label: String, role: ButtonRole? = nil, action: @escaping () -> Void) {
+        self.label = label
+        self.role = role
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .font(.caption)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(backgroundColor)
+                )
+                .foregroundStyle(foregroundColor)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+
+    private var backgroundColor: Color {
+        if role == .destructive {
+            return isHovered ? .red.opacity(0.15) : .clear
+        }
+        return isHovered ? .primary.opacity(0.1) : .primary.opacity(0.05)
+    }
+
+    private var foregroundColor: Color {
+        if role == .destructive {
+            return isHovered ? .red : .secondary
+        }
+        return .primary
     }
 }
 
