@@ -1,8 +1,7 @@
 import SwiftUI
-import Network
 
 // ──────────────────────────────────────────────
-// App entry point
+// App
 // ──────────────────────────────────────────────
 
 @main
@@ -30,17 +29,10 @@ struct ActivePort: Identifiable {
     let startTime: Date?
 
     var url: URL { URL(string: "http://localhost:\(id)")! }
-
-    static func == (lhs: ActivePort, rhs: ActivePort) -> Bool {
-        lhs.id == rhs.id && lhs.pid == rhs.pid &&
-        lhs.projectName == rhs.projectName && lhs.branch == rhs.branch
-    }
 }
 
-extension ActivePort: Equatable {}
-
 // ──────────────────────────────────────────────
-// ViewModel – singleton, polls via lsof
+// ViewModel
 // ──────────────────────────────────────────────
 
 final class PortStore: ObservableObject {
@@ -64,40 +56,25 @@ final class PortStore: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let ports = Self.discoverPorts()
             DispatchQueue.main.async {
-                guard let self else { return }
-                if self.entries != ports {
-                    self.entries = ports
-                }
+                self?.entries = ports
             }
         }
     }
 
     // MARK: - Actions
 
-    func killProcess(pid: Int32) {
+    func stop(pid: Int32) {
         kill(pid, SIGTERM)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.refresh()
         }
     }
 
-    func killAll() {
+    func stopAll() {
         for entry in entries { kill(entry.pid, SIGTERM) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.refresh()
         }
-    }
-
-    static func openInEditor(gitRoot: String) {
-        let cursorURL = URL(fileURLWithPath: "/Applications/Cursor.app")
-        guard FileManager.default.fileExists(atPath: cursorURL.path) else { return }
-        let config = NSWorkspace.OpenConfiguration()
-        NSWorkspace.shared.open(
-            [URL(fileURLWithPath: gitRoot)],
-            withApplicationAt: cursorURL,
-            configuration: config,
-            completionHandler: nil
-        )
     }
 
     static func copyURL(_ url: URL) {
@@ -105,7 +82,7 @@ final class PortStore: ObservableObject {
         NSPasteboard.general.setString(url.absoluteString, forType: .string)
     }
 
-    // MARK: - Port discovery via lsof
+    // MARK: - Port discovery
 
     private static func discoverPorts() -> [ActivePort] {
         guard let output = shell("/usr/sbin/lsof -iTCP -sTCP:LISTEN -n -P 2>/dev/null") else { return [] }
@@ -249,21 +226,6 @@ final class PortStore: ObservableObject {
 }
 
 // ──────────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────────
-
-func formatUptime(from start: Date?) -> String {
-    guard let start else { return "" }
-    let seconds = Int(Date().timeIntervalSince(start))
-    if seconds < 60 { return "<1m" }
-    let m = seconds / 60
-    if m < 60 { return "\(m)m" }
-    let h = m / 60
-    if h < 24 { return "\(h)h \(m % 60)m" }
-    return "\(h / 24)d \(h % 24)h"
-}
-
-// ──────────────────────────────────────────────
 // Views
 // ──────────────────────────────────────────────
 
@@ -286,7 +248,7 @@ struct PortListView: View {
             Divider()
             footer
         }
-        .frame(width: 340)
+        .frame(width: 300)
         .onAppear { store.ensurePolling() }
     }
 
@@ -298,42 +260,52 @@ struct PortListView: View {
                 Image(systemName: "arrow.clockwise")
             }
             .buttonStyle(.borderless)
-            .help("Refresh now")
+            .help("Refresh")
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 16)
         .padding(.vertical, 10)
     }
 
     private var emptyState: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             Image(systemName: "network.slash")
-                .font(.title2)
-                .foregroundStyle(.tertiary)
-            Text("No active ports")
-                .font(.callout)
+                .font(.system(size: 24))
+                .foregroundStyle(.quaternary)
+            Text("No projects running")
+                .font(.callout.weight(.medium))
                 .foregroundStyle(.secondary)
+            Text("Start a dev server to see it here")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
+        .padding(.vertical, 28)
     }
 
     private var footer: some View {
-        HStack(spacing: 12) {
-            Text("\(store.entries.count) active")
+        HStack(spacing: 10) {
+            Text(store.entries.isEmpty
+                 ? "Watching for servers…"
+                 : "\(store.entries.count) project\(store.entries.count == 1 ? "" : "s") running")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
             Spacer()
-            if !store.entries.isEmpty {
-                Button("Kill All") { store.killAll() }
+
+            if store.entries.count > 1 {
+                Button("Stop All") { store.stopAll() }
+                    .font(.caption)
                     .controlSize(.small)
                     .buttonStyle(.borderless)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(.red.opacity(0.8))
             }
+
             Button("Quit") { NSApplication.shared.terminate(nil) }
+                .font(.caption)
                 .controlSize(.small)
                 .buttonStyle(.borderless)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 16)
         .padding(.vertical, 8)
     }
 }
@@ -343,74 +315,77 @@ struct PortRow: View {
     let store: PortStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Circle()
-                    .fill(Color.green)
-                    .frame(width: 8, height: 8)
+        HStack(spacing: 10) {
+            Circle()
+                .fill(.green)
+                .frame(width: 8, height: 8)
+                .padding(.top, 1)
 
-                Text(entry.projectName)
-                    .font(.system(.body, weight: .medium))
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(entry.projectName)
+                        .font(.system(.body, weight: .medium))
+                        .lineLimit(1)
 
-                Spacer()
+                    Spacer()
 
-                Text(formatUptime(from: entry.startTime))
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
+                    if let start = entry.startTime {
+                        Text(formatUptime(from: start))
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
 
-            HStack {
                 HStack(spacing: 4) {
                     if !entry.branch.isEmpty {
-                        Image(systemName: "arrow.triangle.branch")
-                            .font(.caption2)
-                        Text(entry.branch)
-                            .font(.caption)
+                        Label(entry.branch, systemImage: "arrow.triangle.branch")
                             .lineLimit(1)
-                        Text("·")
-                            .font(.caption)
                     }
-                    Text(":\(entry.id)")
-                        .font(.system(.caption, design: .monospaced))
+
                     Text("·")
-                        .font(.caption)
-                    Text(entry.command)
-                        .font(.caption)
+
+                    Text("localhost:\(entry.id)")
+                        .fontDesign(.monospaced)
                 }
+                .font(.caption)
                 .foregroundStyle(.secondary)
+            }
 
-                Spacer()
+            HStack(spacing: 4) {
+                Button { NSWorkspace.shared.open(entry.url) } label: {
+                    Text("Open")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
 
-                HStack(spacing: 2) {
-                    Button { PortStore.openInEditor(gitRoot: entry.gitRootPath) } label: {
-                        Image(systemName: "chevron.left.forwardslash.chevron.right")
-                    }
-                    .help("Open in Cursor")
-
-                    Button { NSWorkspace.shared.open(entry.url) } label: {
-                        Image(systemName: "arrow.up.right.square")
-                    }
-                    .help("Open in browser")
-
-                    Button { store.killProcess(pid: entry.pid) } label: {
-                        Image(systemName: "xmark.circle")
-                            .foregroundStyle(.red.opacity(0.7))
-                    }
-                    .help("Kill process")
+                Button { store.stop(pid: entry.pid) } label: {
+                    Image(systemName: "stop.circle")
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.borderless)
-                .font(.callout)
+                .help("Stop server")
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
         .contentShape(Rectangle())
         .contextMenu {
             Button("Copy URL") { PortStore.copyURL(entry.url) }
             Button("Open in Browser") { NSWorkspace.shared.open(entry.url) }
-            Button("Open in Cursor") { PortStore.openInEditor(gitRoot: entry.gitRootPath) }
             Divider()
-            Button("Kill Process", role: .destructive) { store.killProcess(pid: entry.pid) }
+            Button("Stop Server", role: .destructive) { store.stop(pid: entry.pid) }
         }
     }
+}
+
+// MARK: - Helpers
+
+private func formatUptime(from start: Date) -> String {
+    let s = Int(Date().timeIntervalSince(start))
+    if s < 60 { return "<1m" }
+    let m = s / 60
+    if m < 60 { return "\(m)m" }
+    let h = m / 60
+    if h < 24 { return "\(h)h \(m % 60)m" }
+    return "\(h / 24)d \(h % 24)h"
 }
