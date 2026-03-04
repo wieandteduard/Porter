@@ -99,17 +99,18 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 66D07B6B2F504ED400ABF2CA /* Build configuration list for PBXNativeTarget "Porter" */;
 			buildPhases = (
-				66D07B402F504ED200ABF2CA /* Sources */,
-				66D07B412F504ED200ABF2CA /* Frameworks */,
-				66D07B422F504ED200ABF2CA /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				66D07B462F504ED200ABF2CA /* Porter */,
-			);
+		66D07B402F504ED200ABF2CA /* Sources */,
+			66D07B412F504ED200ABF2CA /* Frameworks */,
+			66D07B422F504ED200ABF2CA /* Resources */,
+			AA000001AA000001AA000001 /* Fix App Icon */,
+		);
+		buildRules = (
+		);
+		dependencies = (
+		);
+		fileSystemSynchronizedGroups = (
+			66D07B462F504ED200ABF2CA /* Porter */,
+		);
 			name = Porter;
 			packageProductDependencies = (
 			);
@@ -230,6 +231,29 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		AA000001AA000001AA000001 /* Fix App Icon */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Porter/AppIconSource.icns",
+			);
+			name = "Fix App Icon";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AppIcon.icns",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "cp \"${SRCROOT}/Porter/AppIconSource.icns\" \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/AppIcon.icns\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		66D07B402F504ED200ABF2CA /* Sources */ = {
@@ -392,7 +416,7 @@
 		66D07B6C2F504ED400ABF2CA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Porter/Porter.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -421,7 +445,7 @@
 		66D07B6D2F504ED400ABF2CA /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Porter/Porter.entitlements;
 				CODE_SIGN_STYLE = Automatic;
