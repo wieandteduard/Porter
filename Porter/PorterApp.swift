@@ -45,7 +45,7 @@ final class OnboardingWindowController: NSObject {
 
     func show() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 360),
+            contentRect: NSRect(x: 0, y: 0, width: 460, height: 320),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -56,94 +56,179 @@ final class OnboardingWindowController: NSObject {
         window.backgroundColor = .white
         window.contentView = NSHostingView(rootView: OnboardingView())
         window.center()
-        window.makeKeyAndOrderFront(nil)
+        window.level = .floating
+        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
         self.window = window
     }
 
     func close() {
         window?.orderOut(nil)
         window = nil
+        NSApp.setActivationPolicy(.accessory)
     }
 }
 
 struct OnboardingView: View {
-    @State private var step = 0
+    @State private var portVisible: [Bool] = Array(repeating: false, count: 8)
+    @State private var portsGone = false
+    @State private var titleVisible = false
+    @State private var subtitleVisible = false
+    @State private var buttonsVisible = false
 
-    private let steps: [(title: String, body: String, detail: String)] = [
-        (
-            "Port Menu",
-            "Your dev servers,\nalways in view.",
-            "A menu bar app that automatically\ndetects what's running locally."
-        ),
-        (
-            "How it works",
-            "No setup required.",
-            "Port Menu scans for running dev servers\nand shows the project name, branch,\nport, and uptime — automatically."
-        ),
-        (
-            "You're all set.",
-            "Find Port Menu\nin your menu bar.",
-            "Click the icon anytime to see\nwhat's running and open or stop servers."
-        )
+    private let ports: [(label: String, x: CGFloat, y: CGFloat)] = [
+        ("localhost:3000",  72,  52),
+        ("localhost:5173", 358,  38),
+        ("localhost:8080",  48, 162),
+        ("localhost:4000", 348, 158),
+        ("localhost:3001", 190,  94),
+        ("localhost:9000",  96, 268),
+        ("localhost:8000", 352, 256),
+        ("localhost:5000", 220, 220),
     ]
 
+    // Accelerating delays — gaps shrink each step
+    private let revealDelays: [Double] = [0.05, 0.25, 0.42, 0.56, 0.67, 0.75, 0.81, 0.86]
+
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer()
-
-            VStack(alignment: .leading, spacing: 0) {
-                Text(steps[step].title)
-                    .font(.system(size: step == 0 ? 42 : 28, weight: .semibold, design: .default))
-                    .tracking(-0.5)
-                    .padding(.bottom, step == 0 ? 20 : 14)
-
-                Text(steps[step].body)
-                    .font(.system(size: 22, weight: .medium, design: .default))
-                    .foregroundStyle(.primary)
-                    .lineSpacing(4)
-                    .padding(.bottom, 16)
-
-                Text(steps[step].detail)
-                    .font(.system(size: 14, weight: .regular, design: .default))
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(3)
+        ZStack {
+            // Phase 1: scattered ports
+            ForEach(ports.indices, id: \.self) { i in
+                ScrambleText(target: ports[i].label, trigger: portVisible[i])
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(Color.primary.opacity(portsGone ? 0 : 0.22))
+                    .blur(radius: portVisible[i] ? (portsGone ? 6 : 0) : 4)
+                    .scaleEffect(portVisible[i] ? (portsGone ? 0.94 : 1) : 0.88)
+                    .opacity(portVisible[i] ? (portsGone ? 0 : 1) : 0)
+                    .position(x: ports[i].x, y: ports[i].y)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 48)
-            .animation(.easeInOut(duration: 0.25), value: step)
 
-            Spacer()
+            // Phase 2: main content
+            VStack(spacing: 0) {
+                Spacer()
 
-            HStack {
-                HStack(spacing: 6) {
-                    ForEach(0..<3) { i in
-                        Circle()
-                            .fill(i == step ? Color.primary : Color.primary.opacity(0.15))
-                            .frame(width: 5, height: 5)
-                            .animation(.easeInOut(duration: 0.2), value: step)
-                    }
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("localhost,\norganized.")
+                        .font(.system(size: 40, weight: .semibold))
+                        .tracking(-0.5)
+                        .lineSpacing(2)
+                        .padding(.bottom, 20)
+                        .modifier(RevealModifier(visible: titleVisible))
+
+                    Text("A menu bar app that tracks your\ndev servers across projects.")
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundStyle(.secondary)
+                        .lineSpacing(4)
+                        .modifier(RevealModifier(visible: subtitleVisible))
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 48)
 
                 Spacer()
 
-                if step < 2 {
-                    Button("Continue") { withAnimation { step += 1 } }
-                        .buttonStyle(OnboardingButtonStyle())
-                } else {
+                HStack(spacing: 10) {
                     Button("Get Started") {
                         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
                         OnboardingWindowController.shared.close()
-                        ActiveTooltipController.show()
                     }
                     .buttonStyle(OnboardingButtonStyle())
+
+                    Spacer()
+
+                    Button("Follow on X") {
+                        NSWorkspace.shared.open(URL(string: "https://x.com/eduardwieandt")!)
+                    }
+                    .buttonStyle(OnboardingSecondaryButtonStyle())
+                }
+                .padding(.horizontal, 48)
+                .padding(.bottom, 40)
+                .modifier(RevealModifier(visible: buttonsVisible))
+            }
+        }
+        .frame(width: 460, height: 320)
+        .background(Color.white)
+        .onAppear { runSequence() }
+    }
+
+    private func runSequence() {
+        // Phase 1: reveal ports one by one, accelerating
+        for i in ports.indices {
+            DispatchQueue.main.asyncAfter(deadline: .now() + revealDelays[i]) {
+                withAnimation(.easeOut(duration: 0.16)) {
+                    portVisible[i] = true
                 }
             }
-            .padding(.horizontal, 48)
-            .padding(.bottom, 40)
         }
-        .frame(width: 460, height: 360)
-        .background(Color.white)
+        // Fade all ports out simultaneously — give scramble time to settle
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.7) {
+            withAnimation(.easeInOut(duration: 0.35)) {
+                portsGone = true
+            }
+        }
+        // Phase 2: main content reveals
+        withAnimation(.spring(response: 0.7, dampingFraction: 0.85).delay(1.95)) {
+            titleVisible = true
+        }
+        withAnimation(.spring(response: 0.7, dampingFraction: 0.85).delay(2.12)) {
+            subtitleVisible = true
+        }
+        withAnimation(.spring(response: 0.7, dampingFraction: 0.85).delay(2.25)) {
+            buttonsVisible = true
+        }
+    }
+}
+
+struct ScrambleText: View {
+    let target: String
+    let trigger: Bool
+    @State private var displayed: String = ""
+    @State private var scrambleTimer: Timer?
+
+    private static let glyphs: [Character] = Array("0123456789abcdefABCDEF!@#$%&*?<>{}[]|~")
+
+    var body: some View {
+        Text(displayed.isEmpty ? target : displayed)
+            .onChange(of: trigger) { active in
+                if active { startScramble() }
+            }
+    }
+
+    private func startScramble() {
+        displayed = scrambled(progress: 0)
+        var step = 0
+        let steps = 14
+        scrambleTimer?.invalidate()
+        scrambleTimer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { t in
+            step += 1
+            if step >= steps {
+                displayed = target
+                t.invalidate()
+                scrambleTimer = nil
+            } else {
+                displayed = scrambled(progress: Double(step) / Double(steps))
+            }
+        }
+    }
+
+    private func scrambled(progress: Double) -> String {
+        let resolvedUpTo = Int(Double(target.count) * progress)
+        return String(target.enumerated().map { (i, c) in
+            if i < resolvedUpTo || c == ":" || c == "/" || c == "." { return c }
+            return Self.glyphs.randomElement() ?? c
+        })
+    }
+}
+
+struct RevealModifier: ViewModifier {
+    let visible: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(visible ? 1 : 0)
+            .blur(radius: visible ? 0 : 6)
+            .scaleEffect(visible ? 1 : 0.96, anchor: .bottom)
+            .offset(y: visible ? 0 : 8)
     }
 }
 
@@ -161,66 +246,17 @@ struct OnboardingButtonStyle: ButtonStyle {
     }
 }
 
-// ──────────────────────────────────────────────
-// Active Tooltip
-// ──────────────────────────────────────────────
-
-final class ActiveTooltipController: NSObject {
-    static func show() {
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 200, height: 40),
-            styleMask: [.nonactivatingPanel, .fullSizeContentView, .borderless],
-            backing: .buffered,
-            defer: false
-        )
-        panel.isFloatingPanel = true
-        panel.level = .statusBar
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hasShadow = false
-
-        if let screen = NSScreen.main {
-            let x = (screen.frame.width - 200) / 2
-            let y = screen.frame.maxY - 70
-            panel.setFrameOrigin(NSPoint(x: x, y: y))
-        }
-
-        panel.contentView = NSHostingView(rootView: ActiveTooltipView())
-        panel.alphaValue = 0
-        panel.orderFront(nil)
-
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.3
-            panel.animator().alphaValue = 1
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.4
-                panel.animator().alphaValue = 0
-            } completionHandler: {
-                panel.orderOut(nil)
-            }
-        }
-    }
-}
-
-struct ActiveTooltipView: View {
-    var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(.green)
-                .frame(width: 6, height: 6)
-            Text("Port Menu is active")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(
-            Capsule()
-                .fill(Color(white: 0.08))
-        )
+struct OnboardingSecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(Color.primary.opacity(configuration.isPressed ? 0.4 : 0.6))
+            .padding(.horizontal, 20)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.primary.opacity(configuration.isPressed ? 0.06 : 0.08))
+            )
     }
 }
 
@@ -231,10 +267,7 @@ struct ActiveTooltipView: View {
 struct ActivePort: Identifiable {
     let id: UInt16
     let pid: Int32
-    let command: String
     let projectName: String
-    let projectPath: String
-    let gitRootPath: String
     let branch: String
     let startTime: Date?
 
@@ -283,13 +316,6 @@ final class PortStore: ObservableObject {
         }
     }
 
-    func killAll() {
-        for entry in entries { kill(entry.pid, SIGTERM) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.refresh()
-        }
-    }
-
     static func copyURL(_ url: URL) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url.absoluteString, forType: .string)
@@ -301,7 +327,7 @@ final class PortStore: ObservableObject {
         guard let output = shell("/usr/sbin/lsof -iTCP -sTCP:LISTEN -n -P 2>/dev/null") else { return [] }
 
         var seen = Set<UInt16>()
-        var portInfos: [(port: UInt16, pid: Int32, command: String)] = []
+        var portInfos: [(port: UInt16, pid: Int32)] = []
 
         for line in output.split(separator: "\n").dropFirst() {
             let cols = line.split(separator: " ", omittingEmptySubsequences: true)
@@ -317,7 +343,7 @@ final class PortStore: ObservableObject {
             guard port >= 1024 else { continue }
             guard seen.insert(port).inserted else { continue }
 
-            portInfos.append((port, pid, String(cols[0])))
+            portInfos.append((port, pid))
         }
 
         let pids = Set(portInfos.map(\.pid))
@@ -347,10 +373,7 @@ final class PortStore: ObservableObject {
                 return ActivePort(
                     id: info.port,
                     pid: info.pid,
-                    command: info.command,
                     projectName: gitRoot.lastPathComponent,
-                    projectPath: cwd,
-                    gitRootPath: rootPath,
                     branch: branches[rootPath] ?? "",
                     startTime: startTimes[info.pid]
                 )
@@ -442,20 +465,6 @@ final class PortStore: ObservableObject {
 // Views
 // ──────────────────────────────────────────────
 
-struct VisualEffectBackground: NSViewRepresentable {
-    let material: NSVisualEffectView.Material
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = material
-        view.blendingMode = .behindWindow
-        view.state = .active
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
-}
-
 struct PortListView: View {
     @ObservedObject private var store = PortStore.shared
 
@@ -543,10 +552,10 @@ struct PortRow: View {
 
                     Spacer()
 
-                HStack(spacing: 2) {
-                    HoverButton("Kill", role: .destructive) { killWithAnimation() }
-                    HoverButton("Open") { NSWorkspace.shared.open(entry.url) }
-                }
+                    HStack(spacing: 2) {
+                        HoverButton("Kill", role: .destructive) { killWithAnimation() }
+                        HoverButton("Open") { NSWorkspace.shared.open(entry.url) }
+                    }
                     .opacity(isHovered ? 1 : 0)
                     .scaleEffect(isHovered ? 1 : 0.85, anchor: .trailing)
                     .offset(x: isHovered ? 0 : 6)
