@@ -690,7 +690,7 @@ private func moveToApplicationsIfNeeded() {
           !bundlePath.contains("DerivedData"),
           !bundlePath.hasPrefix("/tmp/") else { return }
 
-    let destination = "/Applications/Porter.app"
+    let destination = "/Applications/Port Menu.app"
 
     let alert = NSAlert()
     alert.messageText = "Move to Applications Folder?"
