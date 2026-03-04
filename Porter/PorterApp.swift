@@ -62,16 +62,14 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
-            if !Self.hasAnimatedThisLaunch {
-                ForEach(ports.indices, id: \.self) { i in
-                    ScrambleText(target: ports[i].label, trigger: portVisible[i])
-                        .font(.system(size: 10, weight: .regular, design: .monospaced))
-                        .foregroundStyle(Color.primary.opacity(portsGone ? 0 : 0.22))
-                        .blur(radius: portVisible[i] ? (portsGone ? 6 : 0) : 4)
-                        .scaleEffect(portVisible[i] ? (portsGone ? 0.94 : 1) : 0.88)
-                        .opacity(portVisible[i] ? (portsGone ? 0 : 1) : 0)
-                        .position(x: ports[i].x, y: ports[i].y)
-                }
+            ForEach(ports.indices, id: \.self) { i in
+                ScrambleText(target: ports[i].label, trigger: portVisible[i])
+                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                    .foregroundStyle(Color.primary.opacity(portsGone ? 0 : 0.22))
+                    .blur(radius: portVisible[i] ? (portsGone ? 6 : 0) : 4)
+                    .scaleEffect(portVisible[i] ? (portsGone ? 0.94 : 1) : 0.88)
+                    .opacity(portVisible[i] ? (portsGone ? 0 : 1) : 0)
+                    .position(x: ports[i].x, y: ports[i].y)
             }
 
             // Phase 2: main content
@@ -130,8 +128,8 @@ struct OnboardingView: View {
                 contentReady = true
                 guard !sequenceStarted else { return }
                 sequenceStarted = true
-                Self.hasAnimatedThisLaunch = true
                 runSequence()
+                Self.hasAnimatedThisLaunch = true
             }
         }
     }
