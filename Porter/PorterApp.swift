@@ -354,7 +354,6 @@ final class PortStore: ObservableObject {
 
         for (_, cwd) in cwds {
             guard gitRoots[cwd] == nil else { continue }
-            guard !isProtectedPath(cwd) else { continue }
 
             let root: URL?
             if let cached = gitRootCache[cwd] {
@@ -462,12 +461,6 @@ final class PortStore: ObservableObject {
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { return "" }
         return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    }
-
-    private static func isProtectedPath(_ path: String) -> Bool {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let protected = ["Downloads", "Desktop", "Documents", "Pictures", "Movies", "Music"]
-        return protected.contains { path.hasPrefix("\(home)/\($0)") }
     }
 
     private static func findGitRoot(from path: String) -> URL? {
