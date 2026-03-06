@@ -1,3 +1,4 @@
+import ServiceManagement
 import SwiftUI
 
 // MARK: - Port List
@@ -46,6 +47,30 @@ struct PortMainContentView: View {
 
 struct PortHeaderView: View {
     @Environment(PortStore.self) private var store
+    @State private var menuHovered = false
+    @State private var showMenu = false
+    @State private var launchAtLoginError: String?
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–"
+    }
+
+    private var launchAtLogin: Binding<Bool> {
+        Binding(
+            get: { SMAppService.mainApp.status == .enabled },
+            set: { newValue in
+                do {
+                    if newValue {
+                        try SMAppService.mainApp.register()
+                    } else {
+                        try SMAppService.mainApp.unregister()
+                    }
+                } catch {
+                    launchAtLoginError = error.localizedDescription
+                }
+            }
+        )
+    }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -65,24 +90,63 @@ struct PortHeaderView: View {
 
                 HeaderControlButton(
                     tooltip: "Quit Port Menu",
-                    tooltipAlignment: .bottomTrailing,
-                    tooltipOffset: .init(width: -4, height: 28),
                     action: { NSApplication.shared.terminate(nil) }
                 ) {
                     Image(systemName: "power")
+                }
+
+                Button { showMenu.toggle() } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.caption)
+                        .frame(minHeight: 14)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule().fill(Color.primary.opacity(menuHovered ? 0.08 : 0))
+                        )
+                        .foregroundStyle(.secondary)
+                        .scaleEffect(menuHovered ? 1.04 : 1)
+                        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: menuHovered)
+                }
+                .buttonStyle(.plain)
+                .onHover { menuHovered = $0 }
+                .background(FloatingTooltipAnchor(text: "Settings", isVisible: menuHovered && !showMenu))
+                .popover(isPresented: $showMenu, arrowEdge: .bottom) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Port Menu \(appVersion)")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+
+                        Toggle("Launch at Login", isOn: launchAtLogin)
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                    }
+                    .padding(12)
                 }
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        .alert("Couldn't Update Launch at Login", isPresented: launchAtLoginErrorBinding) {
+            Button("OK") { launchAtLoginError = nil }
+        } message: {
+            Text(launchAtLoginError ?? "Port Menu couldn't change its launch-at-login setting.")
+        }
+    }
+
+    private var launchAtLoginErrorBinding: Binding<Bool> {
+        Binding(
+            get: { launchAtLoginError != nil },
+            set: { newValue in
+                if !newValue { launchAtLoginError = nil }
+            }
+        )
     }
 }
 
 struct HeaderControlButton<Label: View>: View {
     let tooltip: String?
     var destructive: Bool = false
-    var tooltipAlignment: Alignment = .bottom
-    var tooltipOffset: CGSize = .init(width: 0, height: 28)
     let action: () -> Void
     @ViewBuilder let label: () -> Label
 
@@ -93,15 +157,7 @@ struct HeaderControlButton<Label: View>: View {
             label()
         }
         .buttonStyle(HeaderButtonStyle(destructive: destructive, isHovered: isHovered))
-        .overlay(alignment: tooltipAlignment) {
-            if isHovered, let tooltip {
-                HeaderTooltip(text: tooltip)
-                    .offset(tooltipOffset)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
-                    .allowsHitTesting(false)
-            }
-        }
-        .zIndex(isHovered ? 1 : 0)
+        .background(FloatingTooltipAnchor(text: tooltip, isVisible: isHovered))
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovered = hovering
@@ -142,25 +198,6 @@ struct HeaderButtonStyle: ButtonStyle {
             return isHovered ? .red : .secondary
         }
         return .secondary
-    }
-}
-
-struct HeaderTooltip: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(.caption2)
-            .lineLimit(1)
-            .fixedSize()
-            .foregroundStyle(.white.opacity(0.96))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(Color.black.opacity(0.82))
-            )
-            .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
     }
 }
 
@@ -406,6 +443,87 @@ struct RowButtonStyle: ButtonStyle {
     private func foregroundColor(_ c: ButtonStyleConfiguration) -> Color {
         if destructive { return isHovered ? .red : .secondary }
         return .primary
+    }
+}
+
+// MARK: - Floating Tooltip
+
+@MainActor
+final class FloatingTooltipPanel {
+    static let shared = FloatingTooltipPanel()
+    private var panel: NSPanel?
+    func show(text: String, below anchorFrame: CGRect) {
+        present(text: text, below: anchorFrame)
+    }
+
+    func hide() {
+        panel?.orderOut(nil)
+        panel?.alphaValue = 0
+    }
+
+    private func present(text: String, below anchorFrame: CGRect) {
+        let hosting = NSHostingView(rootView:
+            Text(text)
+                .font(.caption2)
+                .lineLimit(1)
+                .fixedSize()
+                .foregroundStyle(.white.opacity(0.96))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(Color.black.opacity(0.82))
+                )
+                .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
+        )
+        hosting.frame.size = hosting.fittingSize
+        let size = hosting.fittingSize
+
+        if panel == nil {
+            let p = NSPanel(
+                contentRect: .zero,
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: true
+            )
+            p.isOpaque = false
+            p.backgroundColor = .clear
+            p.level = .popUpMenu
+            p.hasShadow = false
+            p.ignoresMouseEvents = true
+            panel = p
+        }
+
+        panel?.contentView = hosting
+        panel?.setContentSize(size)
+        panel?.setFrameOrigin(NSPoint(
+            x: anchorFrame.midX - size.width / 2,
+            y: anchorFrame.minY - size.height - 4
+        ))
+
+        panel?.alphaValue = 1
+        panel?.orderFront(nil)
+    }
+}
+
+struct FloatingTooltipAnchor: NSViewRepresentable {
+    let text: String?
+    let isVisible: Bool
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if isVisible, let text, !text.isEmpty, let window = nsView.window {
+            let windowRect = nsView.convert(nsView.bounds, to: nil)
+            let screenRect = window.convertToScreen(windowRect)
+            FloatingTooltipPanel.shared.show(text: text, below: screenRect)
+        } else {
+            FloatingTooltipPanel.shared.hide()
+        }
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: ()) {
+        FloatingTooltipPanel.shared.hide()
     }
 }
 
