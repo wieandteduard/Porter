@@ -15,6 +15,26 @@ struct LivePortScanner: PortScanning {
     private static let branchTTL: TimeInterval = 30
     private static let cache = CacheStore()
     private static let processTracker = ProcessTracker()
+    private static let allowedFallbackProcessNames: Set<String> = [
+        "air",
+        "beam.smp",
+        "bun",
+        "deno",
+        "elixir",
+        "erl",
+        "go",
+        "gunicorn",
+        "java",
+        "mix",
+        "node",
+        "php",
+        "puma",
+        "python",
+        "python3",
+        "reflex",
+        "ruby",
+        "uvicorn"
+    ]
 
     func scan() async -> ScanResult {
         let start = Date()
@@ -195,10 +215,18 @@ struct LivePortScanner: PortScanning {
         let activeRootPaths = Set(gitRoots.values.map { $0.path() })
         Self.cache.prune(activeCWDs: activeCWDs, activeRootPaths: activeRootPaths)
 
-        return parsed.map { info -> ActivePort in
+        return parsed.compactMap { info -> ActivePort? in
             let cwd = cwds[info.pid]
             let gitRoot = cwd.flatMap { gitRoots[$0] }
             let rootPath = gitRoot?.path()
+
+            if gitRoot == nil, !Self.shouldKeepFallbackProcess(processName: info.processName, cwd: cwd) {
+                if Log.isVerbose {
+                    Log.scanner.debug("Skipping non-project process '\(info.processName)' on port \(info.port)")
+                }
+                return nil
+            }
+
             let projectName = Self.displayName(
                 processName: info.processName,
                 cwd: cwd,
@@ -232,6 +260,28 @@ struct LivePortScanner: PortScanning {
         }
 
         return processName
+    }
+
+    static func shouldKeepFallbackProcess(processName: String, cwd: String?) -> Bool {
+        let normalized = processName.lowercased()
+        if allowedFallbackProcessNames.contains(normalized) {
+            return true
+        }
+
+        if normalized.hasPrefix("python"),
+           normalized.dropFirst("python".count).allSatisfy({ $0.isNumber || $0 == "." }) {
+            return true
+        }
+
+        if let cwd {
+            let basename = URL(filePath: cwd).lastPathComponent
+            if isMeaningfulDirectoryName(basename),
+               allowedFallbackProcessNames.contains(basename.lowercased()) {
+                return true
+            }
+        }
+
+        return false
     }
 
     static func isMeaningfulDirectoryName(_ name: String) -> Bool {

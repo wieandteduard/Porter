@@ -315,6 +315,39 @@ struct DisplayNameTests {
     }
 }
 
+// MARK: - Fallback Filter Tests
+
+struct FallbackFilterTests {
+
+    @Test func keepsKnownDevRuntimeWithoutGitRoot() {
+        #expect(LivePortScanner.shouldKeepFallbackProcess(
+            processName: "beam.smp",
+            cwd: "/Users/me/work/agidb-backend"
+        ))
+    }
+
+    @Test func keepsVersionedPythonRuntime() {
+        #expect(LivePortScanner.shouldKeepFallbackProcess(
+            processName: "python3.12",
+            cwd: "/Users/me/work/api"
+        ))
+    }
+
+    @Test func rejectsDesktopAppWithoutGitRoot() {
+        #expect(!LivePortScanner.shouldKeepFallbackProcess(
+            processName: "Spotify",
+            cwd: "/Applications/Spotify.app/Contents/MacOS"
+        ))
+    }
+
+    @Test func rejectsFigmaWithoutGitRoot() {
+        #expect(!LivePortScanner.shouldKeepFallbackProcess(
+            processName: "Figma",
+            cwd: "/Applications/Figma.app/Contents/MacOS"
+        ))
+    }
+}
+
 // MARK: - PortStore Tests
 
 @Suite(.serialized) struct PortStoreTests {
