@@ -10,7 +10,12 @@ func moveToApplicationsIfNeeded() {
         let fm = FileManager.default
         let home = fm.homeDirectoryForCurrentUser.path()
         let appName = URL(filePath: bundlePath).lastPathComponent
-        let candidates = ["\(home)/Downloads/\(appName)", "\(home)/Desktop/\(appName)"]
+        let candidates = [
+            "\(home)/Downloads/\(appName)",
+            "\(home)/Desktop/\(appName)",
+            "\(home)/Documents/\(appName)",
+            "\(home)/\(appName)",
+        ]
         if let real = candidates.first(where: { fm.fileExists(atPath: $0) }) {
             sourcePath = real
         }
@@ -70,11 +75,7 @@ func moveToApplicationsIfNeeded() {
             try? fileManager.removeItem(at: backupURL)
         }
 
-        let task = Process()
-        task.executableURL = URL(filePath: "/usr/bin/open")
-        task.arguments = [destinationURL.path()]
-        try task.run()
-        NSApp.terminate(nil)
+        relaunchInstalledApp(at: destinationURL)
     } catch {
         Log.lifecycle.error("Failed to move app to Applications: \(error.localizedDescription)")
         showApplicationsInstallError(error)
@@ -82,10 +83,34 @@ func moveToApplicationsIfNeeded() {
 }
 
 @MainActor
+private func relaunchInstalledApp(at appURL: URL) {
+    do {
+        let process = Process()
+        process.executableURL = URL(filePath: "/usr/bin/open")
+        process.arguments = ["-n", appURL.path()]
+        try process.run()
+        exit(0)
+    } catch {
+        Log.lifecycle.error("Failed to relaunch app from Applications: \(error.localizedDescription)")
+        showApplicationsRelaunchError(error)
+    }
+}
+
+@MainActor
 private func showApplicationsInstallError(_ error: Error) {
     let alert = NSAlert()
-    alert.messageText = "Couldn’t Install Port Menu"
+    alert.messageText = "Couldn't Install Port Menu"
     alert.informativeText = "Port Menu could not be copied to the Applications folder.\n\n\(error.localizedDescription)"
+    alert.addButton(withTitle: "OK")
+    alert.alertStyle = .warning
+    alert.runModal()
+}
+
+@MainActor
+private func showApplicationsRelaunchError(_ error: Error) {
+    let alert = NSAlert()
+    alert.messageText = "Installed, But Couldn't Reopen Port Menu"
+    alert.informativeText = "Port Menu was copied to the Applications folder, but it could not be reopened automatically.\n\nOpen it from Applications to continue.\n\n\(error.localizedDescription)"
     alert.addButton(withTitle: "OK")
     alert.alertStyle = .warning
     alert.runModal()
