@@ -12,9 +12,12 @@ final class PortStore {
     var lastError: ScanError?
     var isScanning: Bool = false
     var lastDiagnostics: ScanDiagnostics?
+    var customNames: [UInt16: String] = [:]
 
     @ObservationIgnored
     @AppStorage("refreshInterval") private var storedInterval: Double = RefreshInterval.defaultInterval.rawValue
+
+    private static let customNamesKey = "customPortNames"
 
     var refreshInterval: RefreshInterval {
         get { RefreshInterval(rawValue: storedInterval) ?? .defaultInterval }
@@ -34,6 +37,7 @@ final class PortStore {
 
     init(scanner: PortScanning = LivePortScanner()) {
         self.scanner = scanner
+        loadCustomNames()
         setupLifecycleObservers()
         Log.lifecycle.info("PortStore initialized")
     }
@@ -113,6 +117,37 @@ final class PortStore {
     }
 
     // MARK: - Actions
+
+    func displayName(for entry: ActivePort) -> String {
+        customNames[entry.port] ?? entry.projectName
+    }
+
+    func setCustomName(_ name: String, for port: UInt16) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty {
+            customNames.removeValue(forKey: port)
+        } else {
+            customNames[port] = trimmed
+        }
+        saveCustomNames()
+    }
+
+    func removeCustomName(for port: UInt16) {
+        customNames.removeValue(forKey: port)
+        saveCustomNames()
+    }
+
+    private func loadCustomNames() {
+        let dict = UserDefaults.standard.dictionary(forKey: Self.customNamesKey) as? [String: String] ?? [:]
+        customNames = Dictionary(uniqueKeysWithValues: dict.compactMap { k, v in
+            UInt16(k).map { ($0, v) }
+        })
+    }
+
+    private func saveCustomNames() {
+        let dict = Dictionary(uniqueKeysWithValues: customNames.map { (String($0.key), $0.value) })
+        UserDefaults.standard.set(dict, forKey: Self.customNamesKey)
+    }
 
     func killProcess(pid: Int32, port: UInt16) {
         kill(pid, SIGTERM)
@@ -201,7 +236,7 @@ final class PortStore {
         Refresh interval: \(refreshInterval.rawValue)s
         Last scan: \(lastDiagnostics?.summary ?? "none")
         Recently killed: \(recentlyKilled.keys.sorted().map(String.init).joined(separator: ", "))
-        Entries: \(entries.map { ":\($0.port) (\($0.projectName))" }.joined(separator: ", "))
+        Entries: \(entries.map { ":\($0.port) (\(displayName(for: $0)))" }.joined(separator: ", "))
         ============================
         """
     }

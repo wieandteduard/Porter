@@ -326,6 +326,9 @@ struct PortRow: View {
     @Environment(PortStore.self) private var store
     @State private var isHovered = false
     @State private var slidOut = false
+    @State private var isRenaming = false
+    @State private var renameText = ""
+    @FocusState private var renameFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -341,22 +344,39 @@ struct PortRow: View {
                         .frame(width: 6, height: 6)
                         .offset(y: -1)
 
-                    Text(entry.projectName)
-                        .font(.system(.body, weight: .medium))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    if isRenaming {
+                        TextField("Name", text: $renameText)
+                            .font(.system(.body, weight: .medium))
+                            .textFieldStyle(.plain)
+                            .focused($renameFocused)
+                            .onSubmit { commitRename() }
+                            .onExitCommand { isRenaming = false }
+                    } else {
+                        Text(store.displayName(for: entry))
+                            .font(.system(.body, weight: .medium))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .foregroundStyle(store.customNames[entry.port] != nil ? .primary : .primary)
+                    }
 
                     Spacer()
 
-                    HStack(spacing: 2) {
-                        HoverButton("Kill", role: .destructive) { killWithAnimation() }
-                        HoverButton("Open") {
-                            NSWorkspace.shared.open(entry.url)
+                    if isRenaming {
+                        HStack(spacing: 2) {
+                            HoverButton("Cancel") { isRenaming = false }
+                            HoverButton("Save") { commitRename() }
                         }
+                    } else {
+                        HStack(spacing: 2) {
+                            HoverButton("Kill", role: .destructive) { killWithAnimation() }
+                            HoverButton("Open") {
+                                NSWorkspace.shared.open(entry.url)
+                            }
+                        }
+                        .opacity(isHovered ? 1 : 0)
+                        .scaleEffect(isHovered ? 1 : 0.85, anchor: .trailing)
+                        .offset(x: isHovered ? 0 : 6)
                     }
-                    .opacity(isHovered ? 1 : 0)
-                    .scaleEffect(isHovered ? 1 : 0.85, anchor: .trailing)
-                    .offset(x: isHovered ? 0 : 6)
                 }
 
                 HStack(spacing: 6) {
@@ -397,6 +417,11 @@ struct PortRow: View {
             }
         }
         .contextMenu {
+            Button("Rename…") { startRenaming() }
+            if store.customNames[entry.port] != nil {
+                Button("Reset Name") { store.removeCustomName(for: entry.port) }
+            }
+            Divider()
             Button("Copy URL") {
                 PortStore.copyToClipboard(entry.url.absoluteString)
             }
@@ -410,6 +435,17 @@ struct PortRow: View {
             Divider()
             Button("Kill Server", role: .destructive) { killWithAnimation() }
         }
+    }
+
+    private func startRenaming() {
+        renameText = store.displayName(for: entry)
+        isRenaming = true
+        renameFocused = true
+    }
+
+    private func commitRename() {
+        store.setCustomName(renameText, for: entry.port)
+        isRenaming = false
     }
 
     private func killWithAnimation() {
